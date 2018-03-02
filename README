@@ -1,0 +1,83 @@
+Deduplication
+
+I have implemented dedup kernel system call to deduplicate two identical files - delete one of them and create a hard link. 
+
+http://www3.cs.stonybrook.edu/~ezk/cse506-s18/hw1.txt
+
+================================
+Source Files
+================================
+
+1. xdedup.c - Userland code to invoke system call
+
+2. sys_xdedup.c - The kernel land implementation of the dedup system call. It is loaded as a kernel module and statically included. 
+
+3. xdedup_header.h - header file which defines struct of args passed between user and kernel side, various flags and page size
+
+4. Makefile - to build the code base
+
+5. kernel.config - config to build custom kernel
+
+===============================
+Running the application
+===============================
+
+make clean
+make
+
+./xdedup [-n|-p|-d] infile1 infile2 outfile
+
+n - optional flag to not actually dedup, only return matching bytes if files match else return -1
+p - optional flag to partially dedup and write to output file which needs to be specified. Doesn't actually dedup, returns no of initial matching bytes until mismatch
+d - optional flag for debug messages
+
+infile1 - compulsary input file
+infile2 - compulsary input file
+outfile - required if p flag is set
+
+==================================
+Design
+==================================
+
+1. User calls dedup system call from client code and passes struct of arguments below
+struct xdedup_params
+{
+	const char *infile1;
+	const char *infile2;
+	char *outfile;
+	u_int flags;
+};
+
+2. Kernel copies and validates the input and checks for various error scenarios.
+a. Arg struct not null
+b. Accessible
+c. Input files not null
+d. Acceptable combination of flags - throws error if outfile provided with n option (even with -np as n takes precedence)
+
+3. Allocate memory to 2 buffers to simultaneously read from the 2 input files
+a. Compare index by index for every buffer
+b. Break if bytes read less than buffer size
+
+4. If n flag supplied, check if files are identical then return size of file else return -1
+a. If p flag supplied, write partial output to temp output file supplied and at the end rename to output file supplied by user and return matched no of bytes.
+
+5. If p flag supplied, calculate partial output, write to temp output file and at the end rename to output file supplied by user and return matched no of bytes.
+
+6. If n or p flags not supplied, and files match then proceed to deduplication else return -1
+a. Take inode lock on parent and unlink file2 and unlock using vfs_unlink
+b. Take inode lock on parent dir and create new dentry for file2 using lookup_one_len
+c. Take mutex lock on parent dir and hard link file2 to file1 using vfs_link
+
+7. Close all files and free memory allocated to buffers.
+
+===============================
+References:
+===============================
+
+1. https://www.gnu.org/software/libc/manual/html_node/Example-of-Getopt.html
+
+2. Kernel APIs - https://www.cs.bham.ac.uk/~exr/lectures/opsys/10_11/docs/kernelAPI/
+
+3. File read/write - https://stackoverflow.com/questions/1184274/how-to-read-write-files-within-a-linux-kernel-module/1184346#1184346
+
+4. Kernel code base hosted on elixir
